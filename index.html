@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Generator & Cetak Kartu Ujian, Daftar Hadir & Berita Acara</title>
+    <title>KARTU DAN ADMINISTRASI UJIAN</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Fonts: Inter untuk UI & Tinos (Times New Roman) untuk Dokumen Formal -->
@@ -573,7 +573,8 @@
                         <div class="grid grid-cols-2 gap-2.5">
                             <div>
                                 <label class="block text-xs font-medium text-slate-700 mb-1">Kelas *</label>
-                                <input type="text" id="std-kelas" required class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-600 outline-none bg-white" placeholder="IX-A">
+                                <input type="text" id="std-kelas" list="student-class-options" required class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-600 outline-none bg-white" placeholder="Pilih / ketik kelas, mis. IX-A">
+                                <datalist id="student-class-options"></datalist>
                             </div>
                             <div>
                                 <label class="block text-xs font-medium text-slate-700 mb-1">Ruang Ujian *</label>
@@ -634,6 +635,16 @@
                             </button>
                         </div>
                         
+                        <div class="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 space-y-2">
+                            <label for="student-class-filter" class="block text-xs font-semibold text-emerald-900">Tampilkan Peserta Berdasarkan Kelas</label>
+                            <select id="student-class-filter" onchange="filterStudentsByClass(this.value)" class="w-full px-3 py-2 text-xs font-semibold border border-emerald-200 rounded-lg bg-white focus:ring-2 focus:ring-emerald-600 outline-none">
+                                <option value="ALL">Semua Kelas</option>
+                            </select>
+                            <div class="flex items-center justify-between text-[11px] text-emerald-800">
+                                <span id="student-class-summary">Semua kelas</span>
+                                <button type="button" onclick="filterStudentsByClass('ALL')" class="font-semibold underline">Reset filter</button>
+                            </div>
+                        </div>
                         <div id="student-list-container" class="space-y-2 max-h-[260px] overflow-y-auto pr-1">
                             <!-- Item siswa dirender via JS -->
                         </div>
@@ -656,10 +667,15 @@
                     <!-- Filter Ruang Ujian -->
                     <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5">
                         <label class="block text-xs font-bold text-slate-800">Filter Ruang Ujian (Daftar Hadir & Berita Acara)</label>
+                        <label class="block text-xs font-semibold text-slate-700">Pilih Kelas</label>
+                        <select id="select-filter-kelas-admin" onchange="updateAdminConfig('filterKelas', this.value)" class="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-emerald-600 outline-none">
+                            <option value="ALL">Semua Kelas</option>
+                        </select>
+                        <label class="block text-xs font-semibold text-slate-700">Pilih Ruang Ujian</label>
                         <select id="select-filter-ruang" onchange="updateAdminConfig('filterRuang', this.value)" class="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-emerald-600 outline-none">
                             <option value="ALL">Semua Ruang (Otomatis Pisah Halaman per Ruang)</option>
                         </select>
-                        <p class="text-[11px] text-slate-500">Jika memilih <strong>Semua Ruang</strong>, sistem otomatis membuatkan Daftar Hadir & Berita Acara terpisah untuk masing-masing ruang.</p>
+                        <p class="text-[11px] text-slate-500">Pilih kelas untuk membatasi peserta. Pilih <strong>Semua Ruang</strong> agar Daftar Hadir & Berita Acara kelas tersebut otomatis dipisah per ruang.</p>
                     </div>
 
                     <!-- Detail Waktu & Mata Pelajaran -->
@@ -929,6 +945,7 @@
             },
             admin: {
                 filterRuang: 'ALL',
+                filterKelas: 'ALL',
                 mapel: 'Bahasa Indonesia',
                 hari: 'Senin',
                 tanggal: '30 November 2026',
@@ -949,6 +966,8 @@
             tempStudentPhoto: '',
             zoomLevel: 0.85
         };
+
+        let studentClassFilter = 'ALL';
 
         const THEME_PALETTES = {
             emerald: { bg: '#065f46', text: '#ffffff' },
@@ -1171,6 +1190,19 @@
             } else {
                 appState.admin.filterRuang = 'ALL';
                 select.value = 'ALL';
+            }
+
+            const classSelect = document.getElementById('select-filter-kelas-admin');
+            if (classSelect) {
+                const currentClass = appState.admin.filterKelas || 'ALL';
+                const classes = [...new Set(appState.students.map(s => (s.kelas || '').trim()).filter(Boolean))].sort((a,b) => a.localeCompare(b, 'id', {numeric:true}));
+                classSelect.innerHTML = `<option value="ALL">Semua Kelas (${appState.students.length} Peserta)</option>` +
+                    classes.map(k => {
+                        const count = appState.students.filter(s => (s.kelas || '').trim() === k).length;
+                        return `<option value="${escapeHtml(k)}">${escapeHtml(k)} (${count} Peserta)</option>`;
+                    }).join('');
+                if (currentClass !== 'ALL' && classes.includes(currentClass)) classSelect.value = currentClass;
+                else { appState.admin.filterKelas = 'ALL'; classSelect.value = 'ALL'; }
             }
         }
 
@@ -1399,25 +1431,56 @@
             if (!silent) showToast('12 Data contoh peserta (2 Ruang) dimuat');
         }
 
+        function updateStudentClassOptions() {
+            const select = document.getElementById('student-class-filter');
+            const datalist = document.getElementById('student-class-options');
+            if (!select || !datalist) return;
+            const classes = [...new Set(appState.students.map(s => (s.kelas || '').trim()).filter(Boolean))]
+                .sort((a, b) => a.localeCompare(b, 'id', { numeric: true }));
+            select.innerHTML = '<option value="ALL">Semua Kelas (' + appState.students.length + ' Peserta)</option>' +
+                classes.map(k => {
+                    const count = appState.students.filter(s => (s.kelas || '').trim() === k).length;
+                    return `<option value="${escapeHtml(k)}">${escapeHtml(k)} (${count} Peserta)</option>`;
+                }).join('');
+            datalist.innerHTML = classes.map(k => `<option value="${escapeHtml(k)}"></option>`).join('');
+            if (studentClassFilter !== 'ALL' && classes.includes(studentClassFilter)) select.value = studentClassFilter;
+            else { studentClassFilter = 'ALL'; select.value = 'ALL'; }
+        }
+
+        function filterStudentsByClass(value) {
+            studentClassFilter = value || 'ALL';
+            renderStudentList();
+        }
+
         function renderStudentList() {
             const container = document.getElementById('student-list-container');
             const countBadge = document.getElementById('badge-count');
             const listCount = document.getElementById('list-count');
-
             countBadge.innerText = appState.students.length;
-            listCount.innerText = appState.students.length;
+            updateStudentClassOptions();
+            const filteredStudents = studentClassFilter === 'ALL'
+                ? appState.students
+                : appState.students.filter(s => (s.kelas || '').trim() === studentClassFilter);
+            listCount.innerText = studentClassFilter === 'ALL' ? appState.students.length : `${filteredStudents.length}/${appState.students.length}`;
+            const summary = document.getElementById('student-class-summary');
+            if (summary) summary.innerText = studentClassFilter === 'ALL'
+                ? `${appState.students.length} peserta dari semua kelas`
+                : `${filteredStudents.length} peserta di kelas ${studentClassFilter}`;
 
             if (appState.students.length === 0) {
-                container.innerHTML = `
-                    <div class="text-center py-6 px-4 border border-dashed border-slate-300 rounded-xl bg-slate-50/50">
-                        <p class="text-xs text-slate-500 mb-2">Belum ada data peserta ujian.</p>
-                        <button onclick="loadSampleData()" class="text-xs font-semibold text-emerald-700 hover:underline">+ Muat Data Contoh</button>
-                    </div>
-                `;
+                container.innerHTML = `<div class="text-center py-6 px-4 border border-dashed border-slate-300 rounded-xl bg-slate-50/50">
+                    <p class="text-xs text-slate-500 mb-2">Belum ada data peserta ujian.</p>
+                    <button onclick="loadSampleData()" class="text-xs font-semibold text-emerald-700 hover:underline">+ Muat Data Contoh</button>
+                </div>`;
                 return;
             }
-
-            container.innerHTML = appState.students.map((std, index) => `
+            if (filteredStudents.length === 0) {
+                container.innerHTML = `<div class="text-center py-5 px-3 border border-dashed border-slate-300 rounded-xl bg-slate-50">
+                    <p class="text-xs text-slate-500">Tidak ada peserta pada kelas ini.</p>
+                </div>`;
+                return;
+            }
+            container.innerHTML = filteredStudents.map((std, index) => `
                 <div class="flex items-center justify-between gap-2 p-2.5 bg-white border border-slate-200 rounded-xl hover:border-emerald-400 transition group">
                     <div class="flex items-center gap-2.5 min-w-0">
                         <span class="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold flex items-center justify-center shrink-0">${index + 1}</span>
@@ -1434,15 +1497,10 @@
                             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                         </button>
                     </div>
-                </div>
-            `).join('');
-
+                </div>`).join('');
             lucide.createIcons();
         }
 
-        // ==========================================
-        // PENGATURAN TAMPILAN, KERTAS & ZOOM
-        // ==========================================
         function setCardsPerPage(count) {
             appState.config.perPage = count;
             const btn6 = document.getElementById('btn-grid-6');
@@ -1516,11 +1574,13 @@
                 : [{ nama: 'NAMA PESERTA UJIAN', nopes: '00-00-000-000', nisn: '0000000000', kelas: '-', ruang: 'Ruang 01', foto: '' }];
 
             const filter = appState.admin.filterRuang;
+            const classFilter = appState.admin.filterKelas || 'ALL';
             const groupedMap = new Map();
 
             baseStudents.forEach(s => {
                 const roomName = (s.ruang || 'Ruang 01').trim();
                 if (filter !== 'ALL' && roomName !== filter) return;
+                if (classFilter !== 'ALL' && (s.kelas || '').trim() !== classFilter) return;
                 if (!groupedMap.has(roomName)) groupedMap.set(roomName, []);
                 groupedMap.get(roomName).push(s);
             });
